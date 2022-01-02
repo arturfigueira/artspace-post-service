@@ -1,7 +1,10 @@
 package com.artspace.post;
 
+import com.artspace.post.validation.ExistsAndActive;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import java.time.Instant;
+import java.util.TimeZone;
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.PastOrPresent;
@@ -38,13 +41,13 @@ public class Post {
   @NotEmpty
   private String message;
 
-  @NotNull
   @PastOrPresent
-  private Instant creationTime = Instant.now();
+  private Instant creationTime;
 
   @NotNull
   @Size(min = 3, max = 50)
   @BsonProperty("username")
+  @ExistsAndActive
   private String author;
 
   private boolean isEnabled = true;
