@@ -2,6 +2,10 @@ package com.artspace.post;
 
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import java.time.Instant;
+import javax.validation.constraints.NotEmpty;
+import javax.validation.constraints.NotNull;
+import javax.validation.constraints.PastOrPresent;
+import javax.validation.constraints.Size;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -29,9 +33,17 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 public class Post {
 
   private ObjectId id;
+
+  @NotNull
+  @NotEmpty
   private String message;
+
+  @NotNull
+  @PastOrPresent
   private Instant creationTime = Instant.now();
 
+  @NotNull
+  @Size(min = 3, max = 50)
   @BsonProperty("username")
   private String author;
 
