@@ -4,6 +4,9 @@ import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 
 import io.smallrye.mutiny.Uni;
 import java.net.URI;
+import javax.validation.Valid;
+import javax.validation.constraints.NotEmpty;
+import javax.validation.constraints.NotNull;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
@@ -40,8 +43,9 @@ public class PostResource {
       responseCode = "200",
       content =
       @Content(mediaType = APPLICATION_JSON, schema = @Schema(implementation = Post.class)))
-  @APIResponse(responseCode = "204", description = "The post not found for a given postId")
-  public Uni<Response> getPostById(@RestPath String postId) {
+  @APIResponse(responseCode = "204", description = "Post not found for a given postId")
+  @APIResponse(responseCode = "400", description = "postId is invalid")
+  public Uni<Response> getPostById(@NotEmpty @NotNull @RestPath String postId) {
 
     return this.postService.retrievePostById(postId).map(optionalPost -> {
       var response = Response.noContent().build();
@@ -67,7 +71,7 @@ public class PostResource {
   @APIResponse(
       responseCode = "400",
       description = "Post not persisted due to invalid data")
-  public Uni<Response> savePost(final Post post, @Context UriInfo uriInfo) {
+  public Uni<Response> savePost(@Valid final Post post, @Context UriInfo uriInfo) {
     var persistedPost = postService.insertPost(post);
     return persistedPost.map(entity -> {
       final var builder = uriInfo.getAbsolutePathBuilder().path(entity.getId().toString());
@@ -77,16 +81,14 @@ public class PostResource {
     });
   }
 
-  @Operation(summary = "Query all posts")
+  @Operation(summary = "Query posts")
   @GET
   @APIResponse(
       responseCode = "200",
       content =
       @Content(mediaType = APPLICATION_JSON, schema = @Schema(implementation = Post.class)))
-  public Uni<Response> queryPosts(@QueryParam("author") String username) {
-
-    //TODO Validate input
-
+  @APIResponse(responseCode = "400", description = "Query params contains invalid data")
+  public Uni<Response> queryPosts(@NotNull @NotEmpty @QueryParam("author") String username) {
     var postsByAuthor = postService.retrievePostsByAuthor(username);
     return postsByAuthor.map(entities -> {
       logger.tracef("Found %s posts for %s", entities.size(), username);
