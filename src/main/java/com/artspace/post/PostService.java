@@ -6,9 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
 import javax.enterprise.context.ApplicationScoped;
-import javax.validation.ConstraintValidator;
 import javax.validation.Valid;
-import javax.validation.Validator;
 import lombok.AllArgsConstructor;
 import org.bson.types.ObjectId;
 import org.jboss.logging.Logger;
@@ -47,7 +45,6 @@ class PostService {
    * Update an author by its username
    *
    * @param author author to be updated
-   * @return
    */
   public Uni<Long> updateAuthor(final Author author) {
     final var normalizedAuthor = this.normalizeAuthor(author);
@@ -85,6 +82,31 @@ class PostService {
     return this.postRepo.persist(normalizedPost);
   }
 
+
+  /**
+   * Update the stored data of a given {@link Post} This method update only the post's message and
+   * enable/disable it.
+   *
+   * @param updatedPost post to be updated
+   * @return A {@link Uni} that will resolve into the updated post. If post is not found the uni
+   * will resolve into a {@code Optional.empty()}
+   */
+  public Uni<Optional<Post>> updatePost(final Post updatedPost) {
+    return this.postRepo.findByIdOptional(updatedPost.getId())
+        .chain(foundPost -> {
+          Uni<Optional<Post>> result = Uni.createFrom().item(Optional.empty());
+
+          if (foundPost.isPresent()) {
+            Post postToUpdate = foundPost.get();
+            postToUpdate.setEnabled(updatedPost.isEnabled());
+            postToUpdate.setMessage(updatedPost.getMessage());
+            result = this.postRepo.update(postToUpdate).map(Optional::of);
+          }
+
+          return result;
+        });
+  }
+
   /**
    * Retrieves a post by its unique object identifier. This will return results even when the author
    * is disabled
@@ -101,27 +123,44 @@ class PostService {
   }
 
   /**
-   * Find all posts for a specified author. Posts will be returned only if the author is an enabled
-   * user, otherwise an empty list will resolve as result.
+   * Search posts. The search is done over an active user. A filter by post status can be applied.
+   * <p>
+   * This is a paginated search, requiring the current page and how many items must be returned.
+   * This is mandatory due to performance, as the number of posts per user can grow indefinitely,
+   * being impractical to return all posts of a user.
+   * <p>
+   * Returned posts will be automatically sorted by its creation date
+   * <p>
+   * Beware that posts will be returned only if the author is an <b>enabled user</b>, otherwise an
+   * empty list will resolve as result.
    *
-   * @param author username of the author
+   * @param postQuery Search query parameters
    * @return A {@link Uni} that will resolve into a {@link List<Post>} for given author
    */
-  public Uni<List<Post>> retrievePostsByAuthor(final String author) {
-    return isAuthorActive(author).chain(this.collectAuthorsPosts(author));
+  public Uni<List<Post>> searchPosts(final PostQuery postQuery) {
+
+    final var query = Optional.ofNullable(postQuery)
+        .orElseThrow(() -> new IllegalArgumentException("PostQuery cannot be null"));
+
+    return isAuthorActive(query.getAuthor())
+        .chain(this.performSearch(query));
   }
 
-  private Function<Boolean, Uni<? extends List<Post>>> collectAuthorsPosts(String author) {
-    return authorIsActive -> {
-      Uni<? extends List<Post>> response;
-      if (Boolean.TRUE.equals(authorIsActive)) {
-        response = this.postRepo.list("author", author);
-      } else {
-        response = Uni.createFrom().item(Collections.emptyList());
-        logger.tracef("User %s is nonexistent or inactive. Empty post list returned", author);
-      }
+  private Function<Boolean, Uni<? extends List<Post>>> performSearch(final PostQuery postQuery) {
+    return authorIsActive -> Boolean.TRUE.equals(authorIsActive)
+        ? this.executeSearch(postQuery)
+        : this.getEmptyListOfPosts(postQuery.getAuthor());
+  }
 
-      return response;
-    };
+  private Uni<? extends List<Post>> getEmptyListOfPosts(String author) {
+    logger.tracef("User %s is nonexistent or inactive. Empty post list returned", author);
+    return Uni.createFrom().item(Collections.emptyList());
+  }
+
+  private Uni<? extends List<Post>> executeSearch(final PostQuery postQuery) {
+    return this.postRepo
+        .find(postQuery.getQuery(), postQuery.getSort(), postQuery.getParameters())
+        .page(postQuery.getPage().getIndex(), postQuery.getPage().getSize())
+        .list();
   }
 }
