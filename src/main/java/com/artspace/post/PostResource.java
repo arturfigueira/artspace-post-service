@@ -71,7 +71,7 @@ public class PostResource {
   @APIResponse(
       responseCode = "400",
       description = "Post not persisted due to invalid data")
-  public Uni<Response> savePost(@Valid final Post post, @Context UriInfo uriInfo) {
+  public Uni<Response> savePost(@NotNull @Valid final Post post, @Context UriInfo uriInfo) {
     var persistedPost = postService.insertPost(post);
     return persistedPost.map(entity -> {
       final var builder = uriInfo.getAbsolutePathBuilder().path(entity.getId().toString());
