@@ -7,7 +7,10 @@ import java.net.URI;
 import javax.validation.Valid;
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Positive;
+import javax.validation.constraints.PositiveOrZero;
 import javax.ws.rs.Consumes;
+import javax.ws.rs.DefaultValue;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
@@ -88,8 +91,22 @@ public class PostResource {
       content =
       @Content(mediaType = APPLICATION_JSON, schema = @Schema(implementation = Post.class)))
   @APIResponse(responseCode = "400", description = "Query params contains invalid data")
-  public Uni<Response> queryPosts(@NotNull @NotEmpty @QueryParam("author") String username) {
-    var postsByAuthor = postService.retrievePostsByAuthor(username);
+  public Uni<Response> queryPosts(
+      @NotNull @NotEmpty @QueryParam("author") String username,
+      @DefaultValue("all") @QueryParam("status") String postStatus,
+      @DefaultValue("0") @PositiveOrZero @QueryParam("index") int pageIndex,
+      @DefaultValue("100") @Positive @QueryParam("size") int pageSize
+  ) {
+    logger.tracef("Querying posts for %s with status %, at page %s with %s per page", username,
+        postStatus, pageIndex, pageSize);
+
+    final var postQuery = PostQuery.builder()
+        .author(username)
+        .postStatus(postStatus)
+        .page(pageIndex, pageSize)
+        .build();
+    var postsByAuthor = postService.searchPosts(postQuery);
+
     return postsByAuthor.map(entities -> {
       logger.tracef("Found %s posts for %s", entities.size(), username);
       return Response.ok(entities).build();

@@ -12,7 +12,10 @@ import static org.hamcrest.CoreMatchers.notNullValue;
 
 import com.github.javafaker.Faker;
 import io.quarkus.test.junit.QuarkusTest;
+import io.smallrye.mutiny.Uni;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import javax.inject.Inject;
 import org.hamcrest.Matchers;
 import org.hamcrest.core.Is;
@@ -181,8 +184,8 @@ class PostResourceTest {
   }
 
   @Test
-  @DisplayName("No Posts should be returned if author is inactive")
-  void getPostShouldReturnEmptyIfAuthorIsInactive() {
+  @DisplayName("Query Posts should return an empty result if author is inactive")
+  void queryPostsShouldReturnEmptyIfAuthorIsInactive() {
     final var sampleAuthor = this.postService.registerAuthor(this.createSampleAuthor()).await()
         .atMost(FIVE_SECONDS);
 
@@ -204,7 +207,160 @@ class PostResourceTest {
         .statusCode(OK.getStatusCode())
         .header(CONTENT_TYPE, "application/json")
         .body("", Matchers.empty());
+  }
 
+  @Test
+  @DisplayName("Query Posts should fail if no author is sent")
+  void queryPostsShouldFailWithoutAuthorParameter() {
+    given()
+        .header(CONTENT_TYPE, JSON)
+        .when()
+        .get("/api/posts")
+        .then()
+        .statusCode(BAD_REQUEST.getStatusCode());
+  }
+
+  @Test
+  @DisplayName("Query Posts must be able to filter active posts")
+  void queryPostsSMustBeAbleToFilterActivePosts() {
+    final var sampleAuthor = this.postService.registerAuthor(this.createSampleAuthor()).await()
+        .atMost(FIVE_SECONDS);
+
+    final var enabledPost = this.createSamplePost();
+    enabledPost.setAuthor(sampleAuthor.getUsername());
+    final var objectId = this.postService
+        .insertPost(enabledPost).map(Post::getId)
+        .await()
+        .atMost(FIVE_SECONDS);
+
+    final var disabledPost = this.createSamplePost();
+    disabledPost.setAuthor(sampleAuthor.getUsername());
+    this.postService
+        .insertPost(disabledPost)
+        .chain(post -> this.postService.updatePost(post.withEnabled(false)))
+        .await()
+        .atMost(FIVE_SECONDS);
+
+    given()
+        .header(CONTENT_TYPE, JSON)
+        .header(ACCEPT, JSON)
+        .pathParam("username", sampleAuthor.getUsername())
+        .pathParam("status", "disabled")
+        .when()
+        .get("/api/posts?author={username}&status={status}")
+        .then()
+        .statusCode(OK.getStatusCode())
+        .header(CONTENT_TYPE, "application/json")
+        .body("size()", Is.is(1))
+        .body("id", Is.is(List.of(objectId.toString())));
+  }
+
+  @Test
+  @DisplayName("Query Posts must be able to filter inactive posts")
+  void queryPostsSMustBeAbleToFilterInactivePosts() {
+    final var sampleAuthor = this.postService.registerAuthor(this.createSampleAuthor()).await()
+        .atMost(FIVE_SECONDS);
+
+    final var enabledPost = this.createSamplePost();
+    enabledPost.setAuthor(sampleAuthor.getUsername());
+    this.postService
+        .insertPost(enabledPost).map(Post::getId)
+        .await()
+        .atMost(FIVE_SECONDS);
+
+    final var disabledPost = this.createSamplePost();
+    disabledPost.setAuthor(sampleAuthor.getUsername());
+    final var objectId = this.postService
+        .insertPost(disabledPost)
+        .chain(post -> this.postService.updatePost(post.withEnabled(false)))
+        .map(opPost -> opPost.map(Post::getId).orElse(null))
+        .await()
+        .atMost(FIVE_SECONDS);
+
+    given()
+        .header(CONTENT_TYPE, JSON)
+        .header(ACCEPT, JSON)
+        .pathParam("username", sampleAuthor.getUsername())
+        .pathParam("status", "disabled")
+        .when()
+        .get("/api/posts?author={username}&status={status}")
+        .then()
+        .statusCode(OK.getStatusCode())
+        .header(CONTENT_TYPE, "application/json")
+        .body("size()", Is.is(1))
+        .body("id", Is.is(List.of(objectId.toString())));
+  }
+
+  @Test
+  @DisplayName("Query Posts must be able to return all post no matter what status")
+  void queryPostsSMustBeAbleToReturAllPostsFromUser() {
+    final var sampleAuthor = this.postService.registerAuthor(this.createSampleAuthor()).await()
+        .atMost(FIVE_SECONDS);
+
+    final var enabledPost = this.createSamplePost();
+    enabledPost.setAuthor(sampleAuthor.getUsername());
+    this.postService
+        .insertPost(enabledPost).map(Post::getId)
+        .await()
+        .atMost(FIVE_SECONDS);
+
+    final var disabledPost = this.createSamplePost();
+    disabledPost.setAuthor(sampleAuthor.getUsername());
+    this.postService
+        .insertPost(disabledPost)
+        .chain(post -> this.postService.updatePost(post.withEnabled(false)))
+        .await()
+        .atMost(FIVE_SECONDS);
+
+    given()
+        .header(CONTENT_TYPE, JSON)
+        .header(ACCEPT, JSON)
+        .pathParam("username", sampleAuthor.getUsername())
+        .when()
+        .get("/api/posts?author={username}")
+        .then()
+        .statusCode(OK.getStatusCode())
+        .header(CONTENT_TYPE, "application/json")
+        .body("size()", Is.is(2));
+  }
+
+  @Test
+  @DisplayName("Query Posts should paginate results accordingly")
+  void queryPostsShoulPaginateResults() {
+    final var sampleAuthor = this.postService.registerAuthor(this.createSampleAuthor()).await()
+        .atMost(FIVE_SECONDS);
+
+    final var uniPosts = new ArrayList<Uni<Post>>();
+    for(int index=0; index<5; index++){
+      final var enabledPost = this.createSamplePost();
+      enabledPost.setAuthor(sampleAuthor.getUsername());
+      uniPosts.add(this.postService.insertPost(enabledPost));
+    }
+
+    Uni.combine().all().unis(uniPosts).combinedWith(List::size).await().atMost(FIVE_SECONDS);
+
+    given()
+        .header(CONTENT_TYPE, JSON)
+        .header(ACCEPT, JSON)
+        .pathParam("username", sampleAuthor.getUsername())
+        .when()
+        .get("/api/posts?author={username}&index=0&size=3")
+        .then()
+        .statusCode(OK.getStatusCode())
+        .header(CONTENT_TYPE, "application/json")
+        .body("size()", Is.is(3));
+
+
+    given()
+        .header(CONTENT_TYPE, JSON)
+        .header(ACCEPT, JSON)
+        .pathParam("username", sampleAuthor.getUsername())
+        .when()
+        .get("/api/posts?author={username}&index=1&size=4")
+        .then()
+        .statusCode(OK.getStatusCode())
+        .header(CONTENT_TYPE, "application/json")
+        .body("size()", Is.is(1));
   }
 
   private Author createSampleAuthor() {
