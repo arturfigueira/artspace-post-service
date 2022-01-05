@@ -1,5 +1,6 @@
-package com.artspace.post;
+package com.artspace.post.data;
 
+import com.artspace.post.Author;
 import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
 import javax.enterprise.context.ApplicationScoped;
 

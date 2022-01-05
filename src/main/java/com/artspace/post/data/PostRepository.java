@@ -1,9 +1,10 @@
-package com.artspace.post;
+package com.artspace.post.data;
 
+import com.artspace.post.Post;
 import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
 import javax.enterprise.context.ApplicationScoped;
 
 @ApplicationScoped
-class PostRepository implements ReactivePanacheMongoRepository<Post> {
+public class PostRepository implements ReactivePanacheMongoRepository<Post> {
 
 }

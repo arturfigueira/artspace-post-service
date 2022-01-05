@@ -1,10 +1,8 @@
 package com.artspace.post;
 
 import com.artspace.post.validation.ExistsAndActive;
-import com.fasterxml.jackson.annotation.JsonFormat;
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import java.time.Instant;
-import java.util.TimeZone;
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.PastOrPresent;
