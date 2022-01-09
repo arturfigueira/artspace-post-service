@@ -7,7 +7,6 @@ import java.util.Optional;
 import javax.enterprise.context.ApplicationScoped;
 import javax.validation.Valid;
 import lombok.AllArgsConstructor;
-import org.jboss.logging.Logger;
 
 /**
  * Service class to provide access to user's post data
@@ -16,10 +15,27 @@ import org.jboss.logging.Logger;
  */
 @AllArgsConstructor
 @ApplicationScoped
-class PostService {
+public class PostService {
 
   final PostDataAccess postDataAccess;
-  final Logger logger;
+
+  private static Author normalizeAuthor(final Author input) {
+    return input.withUsername(normalizeUserName(input.getUsername()));
+  }
+
+  private static String normalizeUserName(String username) {
+    return username.toLowerCase().trim();
+  }
+
+  private static Optional<String> nonBlank(String username) {
+    return Optional.ofNullable(username)
+        .filter(value -> !value.isBlank());
+  }
+
+  private static Author copyTo(final Author source, final Author receiver) {
+    receiver.setActive(source.isActive());
+    return receiver;
+  }
 
   /**
    * Register a valid new Author into the repository. Author data will be normalized before being
@@ -32,7 +48,7 @@ class PostService {
    *                                                       data
    */
   public Uni<Author> registerAuthor(@Valid final Author author) {
-    return this.postDataAccess.persist(this.normalizeAuthor(author));
+    return this.postDataAccess.persist(normalizeAuthor(author));
   }
 
   /**
@@ -40,13 +56,37 @@ class PostService {
    *
    * @param author author to be updated
    */
-  public Uni<Long> updateAuthor(final Author author) {
-    return this.postDataAccess.merge(this.normalizeAuthor(author));
+  public Uni<Optional<Author>> updateAuthor(@Valid final Author author) {
+    return this.postDataAccess.merge(normalizeAuthor(author));
   }
 
-  private Author normalizeAuthor(final Author input) {
-    return input.withUsername(input.getUsername().toLowerCase().trim());
+
+  /**
+   * Find an {@link Author} entity by its username
+   *
+   * @param username username of the author
+   * @return an {@link Uni} that will resolve it the found user or {@code Optional.empty()}
+   * otherwise.
+   */
+  public Uni<Optional<Author>> findAuthorByUsername(final String username) {
+    return nonBlank(username)
+        .map(value -> this.postDataAccess.findAuthorByUsername(normalizeUserName(value)))
+        .orElseGet(() -> Uni.createFrom().item(Optional.empty()));
   }
+
+  /**
+   * If given {@link Author} is already persisted the previous data will be updated. If this is a
+   * new author, it will be inserted into the repository
+   *
+   * @param author to be updated or inserted into the repository
+   * @return an {@link Uni} that will resolve it the updated/inserted author
+   */
+  public Uni<Optional<Author>> persistOrUpdateAuthor(@Valid final Author author) {
+    return this.postDataAccess.findAuthorByUsername(author.getUsername())
+        .chain(foundAuthor -> foundAuthor.map(a -> this.postDataAccess.merge(copyTo(author, a)))
+            .orElseGet(() -> this.postDataAccess.persist(author).map(Optional::ofNullable)));
+  }
+
 
   /**
    * Verify if given author, by its username, exists and is active at the moment
@@ -55,7 +95,10 @@ class PostService {
    * @return {@code true} if the author exists and is active, {@code false} otherwise
    */
   protected Uni<Boolean> isAuthorActive(String username) {
-    return this.postDataAccess.isAuthorActive(username);
+    return nonBlank(username)
+        .map(value -> this.postDataAccess.isAuthorActive(username))
+        .orElseGet(() -> Uni.createFrom()
+            .item(false));
   }
 
   /**
@@ -114,6 +157,7 @@ class PostService {
 
   /**
    * Initiate a {@link PaginatedSearch} pipeline
+   *
    * @return a new instance of a paginated search
    */
   public PaginatedSearch searchPosts() {
