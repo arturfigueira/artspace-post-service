@@ -32,9 +32,10 @@ class MongoDataAccess implements PostDataAccess {
   }
 
   @Override
-  public Uni<Long> merge(Author author) {
+  public Uni<Optional<Author>> merge(final Author author) {
     return this.authorReactiveRepository.update("active", author.isActive())
-        .where("username", author.getUsername());
+        .where("username", author.getUsername())
+        .map(aLong->Optional.of(author));
   }
 
   @Override
@@ -57,6 +58,12 @@ class MongoDataAccess implements PostDataAccess {
   @Override
   public Uni<Optional<Post>> findById(ObjectId id) {
     return this.postRepository.findByIdOptional(id);
+  }
+
+  @Override
+  public Uni<Optional<Author>> findAuthorByUsername(String username) {
+    return this.authorReactiveRepository.find("username", username)
+        .singleResultOptional();
   }
 
   @Override

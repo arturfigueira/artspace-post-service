@@ -15,15 +15,17 @@ public interface PostDataAccess {
 
   Uni<Post> persist(final Post post);
 
-  Uni<Long> merge(final Author author);
+  Uni<Optional<Author>> merge(final Author author);
 
   Uni<Optional<Post>> merge(final Post post);
 
   Uni<Boolean> isAuthorActive(String username);
 
-  Uni<Optional<Post>> findById(final String id);
+  Uni<Optional<Post>> findById(String id);
 
   Uni<Optional<Post>> findById(final ObjectId id);
+
+  Uni<Optional<Author>> findAuthorByUsername(String username);
 
   PaginatedSearch searchPosts();
 }
