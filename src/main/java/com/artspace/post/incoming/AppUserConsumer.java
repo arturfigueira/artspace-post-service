@@ -49,7 +49,7 @@ public class AppUserConsumer {
    * @return A {@link Uni} that might successfully resolve into a {@link  Author} or a failed uni
    * with {@link RecordConsumingException}
    */
-  @Incoming("identity-cdc-appusers-0")
+  @Incoming("appusers-in")
   @Timeout()
   @Retry(delay = 10, maxRetries = 5)
   public Uni<Optional<Author>> consume(final ConsumerRecord<String, AppUserDTO> incomingMessage) {
@@ -89,9 +89,8 @@ public class AppUserConsumer {
 
     } catch (ValidationException e) {
       logger.debugf(
-          "[%s] Message with invalid payload. Ignoring Message %s",
-          correlationId,
-          incomingMessage);
+          "[%s] Message with invalid payload. Reason %s",
+          correlationId, e);
       return Uni.createFrom().item(Optional.empty());
     } catch (Exception e) {
       return Uni.createFrom()
