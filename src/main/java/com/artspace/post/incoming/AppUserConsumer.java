@@ -2,8 +2,15 @@ package com.artspace.post.incoming;
 
 import com.artspace.post.Author;
 import com.artspace.post.PostService;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import io.smallrye.mutiny.Uni;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+import javax.annotation.PostConstruct;
 import javax.enterprise.context.ApplicationScoped;
 import javax.validation.ValidationException;
 import lombok.AccessLevel;
@@ -27,6 +34,19 @@ public class AppUserConsumer {
 
   final Logger logger;
   final PostService postService;
+  final MeterRegistry registry;
+
+  Timer processTimer;
+
+  @PostConstruct
+  void init() {
+    this.processTimer = Timer.builder("post_consumer_appusers_latency")
+        .description("The latency of the AppUsers pipeline")
+        .publishPercentiles(0.5, 0.75, 0.95, 0.98, 0.99, 0.999)
+        .percentilePrecision(3)
+        .distributionStatisticExpiry(Duration.ofMinutes(25))
+        .register(registry);
+  }
 
   /**
    * Consumes records from Kafka with {@link AppUserDTO}. Consumed appUsers will be persisted or
@@ -78,12 +98,15 @@ public class AppUserConsumer {
     logger.debugf("[%s] New incoming AppUser message to process. %s", correlationId,
         appUser);
 
+    final var eventStartTime = incomingMessage.timestamp();
+
     try {
       return postService.persistOrUpdateAuthor(toEntity(appUser))
           .invoke(author -> logger.infof(
               "[%s] AppUser with username %s processed. Author updated/registered with id %s",
               correlationId, appUser.getUsername(), author.map(Author::getId).map(
                   ObjectId::toString).orElse("N/A")))
+          .invoke(() -> recordTimer(eventStartTime))
           .onFailure()
           .transform(e -> new RecordConsumingException(e.getMessage(), incomingMessage));
 
@@ -97,6 +120,13 @@ public class AppUserConsumer {
           .failure(new RecordConsumingException(e.getMessage(), incomingMessage));
     }
 
+  }
+
+  private void recordTimer(long eventStartTime) {
+    final var totalTime = Instant.now()
+        .minus(eventStartTime, ChronoUnit.MILLIS)
+        .toEpochMilli();
+    this.processTimer.record(totalTime,TimeUnit.MILLISECONDS);
   }
 
   private static Author toEntity(final AppUserDTO appUserDTO) {

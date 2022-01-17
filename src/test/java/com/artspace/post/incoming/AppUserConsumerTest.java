@@ -12,6 +12,8 @@ import com.artspace.post.Author;
 import com.artspace.post.PostService;
 import com.github.javafaker.Faker;
 import com.mongodb.MongoClientException;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import io.smallrye.mutiny.Uni;
 import java.time.Duration;
 import java.util.Locale;
@@ -46,6 +48,10 @@ class AppUserConsumerTest {
 
   PostService mockedPostService;
 
+  MeterRegistry meterRegistry;
+
+  Timer timer;
+
   @BeforeAll
   public static void setupBefore() {
     FAKER = new Faker(Locale.ENGLISH);
@@ -54,7 +60,10 @@ class AppUserConsumerTest {
   @BeforeEach
   public void setup() {
     mockedPostService = mock(PostService.class);
-    appUserConsumer = new AppUserConsumer(LOGGER, mockedPostService);
+    meterRegistry = mock(MeterRegistry.class);
+    timer = mock(Timer.class);
+    appUserConsumer = new AppUserConsumer(LOGGER, mockedPostService, meterRegistry);
+    appUserConsumer.processTimer = timer;
   }
 
   private Optional<Author> consumeRecord(ConsumerRecord<String, AppUserDTO> record) {
