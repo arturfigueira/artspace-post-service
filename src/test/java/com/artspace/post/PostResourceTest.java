@@ -17,6 +17,7 @@ import io.smallrye.mutiny.Uni;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import javax.inject.Inject;
 import org.bson.types.ObjectId;
 import org.hamcrest.Matchers;
@@ -74,6 +75,7 @@ class PostResourceTest {
     given()
         .header(CONTENT_TYPE, JSON)
         .header(ACCEPT, JSON)
+        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
         .body(createSamplePost())
         .when()
         .post("/api/posts")
@@ -95,6 +97,7 @@ class PostResourceTest {
     given()
         .header(CONTENT_TYPE, JSON)
         .header(ACCEPT, JSON)
+        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
         .body(samplePost)
         .when()
         .post("/api/posts")
@@ -108,6 +111,7 @@ class PostResourceTest {
     given()
         .header(CONTENT_TYPE, JSON)
         .header(ACCEPT, JSON)
+        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
         .when()
         .post("/api/posts")
         .then()
@@ -123,6 +127,7 @@ class PostResourceTest {
     given()
         .header(CONTENT_TYPE, JSON)
         .header(ACCEPT, JSON)
+        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
         .when()
         .body(samplePost)
         .post("/api/posts")
@@ -144,6 +149,7 @@ class PostResourceTest {
     given()
         .header(CONTENT_TYPE, JSON)
         .header(ACCEPT, JSON)
+        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
         .pathParam("postId", persistedPost.getId().toString())
         .when()
         .get("/api/posts/{postId}")
@@ -173,6 +179,7 @@ class PostResourceTest {
     var location = given()
         .header(CONTENT_TYPE, JSON)
         .header(ACCEPT, JSON)
+        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
         .body(samplePost)
         .when()
         .post("/api/posts")
@@ -184,6 +191,7 @@ class PostResourceTest {
     given()
         .header(CONTENT_TYPE, JSON)
         .header(ACCEPT, JSON)
+        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
         .when()
         .get(location)
         .then()
@@ -203,6 +211,7 @@ class PostResourceTest {
     given()
         .header(CONTENT_TYPE, JSON)
         .header(ACCEPT, JSON)
+        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
         .pathParam("index", page)
         .pathParam("size", size)
         .when()
@@ -228,6 +237,7 @@ class PostResourceTest {
     given()
         .header(CONTENT_TYPE, JSON)
         .header(ACCEPT, JSON)
+        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
         .pathParam("username", sampleAuthor.getUsername())
         .when()
         .get("/api/posts?author={username}")
@@ -255,6 +265,7 @@ class PostResourceTest {
     given()
         .header(CONTENT_TYPE, JSON)
         .header(ACCEPT, JSON)
+        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
         .when()
         .get("/api/posts")
         .then()
@@ -273,6 +284,7 @@ class PostResourceTest {
     given()
         .header(CONTENT_TYPE, JSON)
         .header(ACCEPT, JSON)
+        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
         .pathParam("status", "enabled")
         .when()
         .get("/api/posts?status={status}")
@@ -292,6 +304,7 @@ class PostResourceTest {
     given()
         .header(CONTENT_TYPE, JSON)
         .header(ACCEPT, JSON)
+        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
         .pathParam("status", "disabled")
         .when()
         .get("/api/posts?status={status}")
@@ -359,6 +372,7 @@ class PostResourceTest {
     given()
         .header(CONTENT_TYPE, JSON)
         .header(ACCEPT, JSON)
+        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
         .pathParam("username", sampleAuthor.getUsername())
         .when()
         .get("/api/posts?author={username}&status=all")
@@ -386,6 +400,7 @@ class PostResourceTest {
     given()
         .header(CONTENT_TYPE, JSON)
         .header(ACCEPT, JSON)
+        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
         .when()
         .get("/api/posts?index=0&size=3")
         .then()
@@ -396,6 +411,7 @@ class PostResourceTest {
     given()
         .header(CONTENT_TYPE, JSON)
         .header(ACCEPT, JSON)
+        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
         .when()
         .get("/api/posts?index=1&size=4")
         .then()
@@ -416,5 +432,9 @@ class PostResourceTest {
     post.setAuthor(createSampleAuthor().getUsername());
     post.setMessage(FAKER.lorem().sentence());
     return post;
+  }
+
+  private String createSampleCorrelationId() {
+    return UUID.randomUUID().toString();
   }
 }
