@@ -5,6 +5,7 @@ import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 import io.smallrye.mutiny.Uni;
 import java.net.URI;
 import javax.validation.Valid;
+import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Positive;
@@ -12,6 +13,7 @@ import javax.validation.constraints.PositiveOrZero;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DefaultValue;
 import javax.ws.rs.GET;
+import javax.ws.rs.HeaderParam;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
@@ -36,6 +38,8 @@ import org.jboss.resteasy.reactive.RestPath;
 @AllArgsConstructor
 public class PostResource {
 
+  protected static final String CORRELATION_HEADER = "X-Request-ID";
+
   final PostService postService;
   final Logger logger;
 
@@ -48,16 +52,17 @@ public class PostResource {
       @Content(mediaType = APPLICATION_JSON, schema = @Schema(implementation = Post.class)))
   @APIResponse(responseCode = "204", description = "Post not found for a given postId")
   @APIResponse(responseCode = "400", description = "postId is invalid")
-  public Uni<Response> getPostById(@NotEmpty @NotNull @RestPath String postId) {
+  public Uni<Response> getPostById(@NotEmpty @NotNull @RestPath String postId,
+      @NotBlank @HeaderParam(CORRELATION_HEADER) String correlationId) {
 
     return this.postService.retrievePostById(postId).map(optionalPost -> {
       var response = Response.noContent().build();
 
       if (optionalPost.isPresent()) {
-        logger.tracef("Found post %s", optionalPost.get());
+        logger.debugf("[%s] Found post %s", correlationId, optionalPost.get());
         response = Response.ok(optionalPost.get()).build();
       } else {
-        logger.tracef("Post not found with postId %s", postId);
+        logger.debugf("[%] Post not found with postId %s", correlationId, postId);
       }
 
       return response;
@@ -74,12 +79,13 @@ public class PostResource {
   @APIResponse(
       responseCode = "400",
       description = "Post not persisted due to invalid data")
-  public Uni<Response> savePost(@NotNull @Valid final Post post, @Context UriInfo uriInfo) {
+  public Uni<Response> savePost(@NotNull @Valid final Post post, @Context UriInfo uriInfo,
+      @NotBlank @HeaderParam(CORRELATION_HEADER) String correlationId) {
     var persistedPost = postService.insertPost(post);
     return persistedPost.map(entity -> {
       final var builder = uriInfo.getAbsolutePathBuilder().path(entity.getId().toString());
       final var postURI = builder.build();
-      logger.tracef("New Post saved with URI %s", postURI);
+      logger.debugf("[%s] New Post saved with URI %s", correlationId, postURI);
       return Response.created(postURI).build();
     });
   }
@@ -95,10 +101,11 @@ public class PostResource {
       @QueryParam("author") String username,
       @DefaultValue("enabled") @QueryParam("status") String postStatus,
       @DefaultValue("0") @PositiveOrZero @QueryParam("index") int pageIndex,
-      @DefaultValue("10") @Positive @QueryParam("size") int pageSize
+      @DefaultValue("10") @Positive @QueryParam("size") int pageSize,
+      @NotBlank @HeaderParam(CORRELATION_HEADER) String correlationId
   ) {
-    logger.tracef("Querying posts for %s with status %, at page %s with %s per page", username,
-        postStatus, pageIndex, pageSize);
+    logger.debugf("[%s] Querying posts for %s with status %, at page %s with %s per page",
+        correlationId, username, postStatus, pageIndex, pageSize);
 
     var postsByAuthor = postService.searchPosts()
         .atPage(pageIndex)
@@ -108,7 +115,7 @@ public class PostResource {
         .invoke();
 
     return postsByAuthor.map(entities -> {
-      logger.tracef("Found %s posts for %s", entities.size(), username);
+      logger.debugf("[%s] Found %s posts for %s", correlationId, entities.size(), username);
       return Response.ok(entities).build();
     });
   }
