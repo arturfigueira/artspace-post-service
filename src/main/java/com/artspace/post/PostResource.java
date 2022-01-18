@@ -2,6 +2,8 @@ package com.artspace.post;
 
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 
+import io.micrometer.core.annotation.Counted;
+import io.micrometer.core.annotation.Timed;
 import io.smallrye.mutiny.Uni;
 import java.net.URI;
 import javax.validation.Valid;
@@ -52,6 +54,8 @@ public class PostResource {
       @Content(mediaType = APPLICATION_JSON, schema = @Schema(implementation = Post.class)))
   @APIResponse(responseCode = "204", description = "Post not found for a given postId")
   @APIResponse(responseCode = "400", description = "postId is invalid")
+  @Timed(value ="post_resource_get_by_id", description = "How long it takes to find a post by Id")
+  @Counted(value ="post_resource_get_by_id", description = "How many times find a post by Id was executed")
   public Uni<Response> getPostById(@NotEmpty @NotNull @RestPath String postId,
       @NotBlank @HeaderParam(CORRELATION_HEADER) String correlationId) {
 
@@ -79,6 +83,8 @@ public class PostResource {
   @APIResponse(
       responseCode = "400",
       description = "Post not persisted due to invalid data")
+  @Timed(value ="post_resource_save", description = "How long it takes to save a new post")
+  @Counted(value ="post_resource_save", description = "How many times save a new post was executed")
   public Uni<Response> savePost(@NotNull @Valid final Post post, @Context UriInfo uriInfo,
       @NotBlank @HeaderParam(CORRELATION_HEADER) String correlationId) {
     var persistedPost = postService.insertPost(post);
@@ -97,6 +103,8 @@ public class PostResource {
       content =
       @Content(mediaType = APPLICATION_JSON, schema = @Schema(implementation = Post.class)))
   @APIResponse(responseCode = "400", description = "Query params contains invalid data")
+  @Timed(value ="post_resource_query", description = "How long it takes to query a post")
+  @Counted(value ="post_resource_query", description = "How many times query post was executed")
   public Uni<Response> queryPosts(
       @QueryParam("author") String username,
       @DefaultValue("enabled") @QueryParam("status") String postStatus,
