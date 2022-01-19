@@ -5,6 +5,7 @@ import com.artspace.post.data.PostDataAccess;
 import io.smallrye.mutiny.Uni;
 import java.util.Optional;
 import javax.enterprise.context.ApplicationScoped;
+import javax.transaction.Transactional;
 import javax.validation.Valid;
 import lombok.AllArgsConstructor;
 
@@ -81,6 +82,7 @@ public class PostService {
    * @param author to be updated or inserted into the repository
    * @return an {@link Uni} that will resolve it the updated/inserted author
    */
+  @Transactional(Transactional.TxType.REQUIRES_NEW)
   public Uni<Optional<Author>> persistOrUpdateAuthor(@Valid final Author author) {
     return this.postDataAccess.findAuthorByUsername(author.getUsername())
         .chain(foundAuthor -> foundAuthor.map(a -> this.postDataAccess.merge(copyTo(author, a)))
@@ -124,6 +126,7 @@ public class PostService {
    * @return A {@link Uni} that will resolve into the updated post. If post is not found the uni
    * will resolve into a {@code Optional.empty()}
    */
+  @Transactional(Transactional.TxType.REQUIRES_NEW)
   public Uni<Optional<Post>> updatePost(final Post updatedPost) {
     return this.postDataAccess.findById(updatedPost.getId())
         .chain(foundPost -> {
