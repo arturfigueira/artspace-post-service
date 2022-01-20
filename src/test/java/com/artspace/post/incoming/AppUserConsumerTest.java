@@ -1,11 +1,12 @@
 package com.artspace.post.incoming;
 
 import static org.hamcrest.CoreMatchers.is;
-import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.artspace.post.Author;
@@ -14,7 +15,6 @@ import com.github.javafaker.Faker;
 import com.mongodb.MongoClientException;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import io.smallrye.mutiny.Uni;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.Optional;
@@ -34,6 +34,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EmptySource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
@@ -52,6 +54,9 @@ class AppUserConsumerTest {
 
   Timer timer;
 
+  @Captor
+  ArgumentCaptor<Author> argumentCaptor;
+
   @BeforeAll
   public static void setupBefore() {
     FAKER = new Faker(Locale.ENGLISH);
@@ -66,11 +71,6 @@ class AppUserConsumerTest {
     appUserConsumer.processTimer = timer;
   }
 
-  private Optional<Author> consumeRecord(ConsumerRecord<String, AppUserDTO> record) {
-    return this.appUserConsumer.consume(record).await().atMost(ONE_SEC);
-  }
-
-
   @Test
   @DisplayName("Messages without a CorrelationId header should be ignored")
   void messagesWithoutCorrelationIdShouldBeIgnored() {
@@ -78,10 +78,10 @@ class AppUserConsumerTest {
     final var record = new ConsumerRecord<>("appuser", 1, 100L, "", new AppUserDTO());
 
     //when
-    final var consume = consumeRecord(record);
+    this.appUserConsumer.consume(record);
 
     //then
-    assertTrue(consume.isEmpty());
+    verify(mockedPostService, never()).persistOrUpdateAuthor(any(Author.class));
   }
 
   @ParameterizedTest
@@ -95,10 +95,10 @@ class AppUserConsumerTest {
         new AppUserDTO());
 
     //when
-    final var consume = consumeRecord(record);
+    this.appUserConsumer.consume(record);
 
     //then
-    assertTrue(consume.isEmpty());
+    verify(mockedPostService, never()).persistOrUpdateAuthor(any(Author.class));
   }
 
   @Test
@@ -111,11 +111,8 @@ class AppUserConsumerTest {
     when(this.mockedPostService.persistOrUpdateAuthor(any())).thenThrow(
         new ConstraintViolationException(Set.of()));
 
-    //when
-    final var consume = consumeRecord(record);
-
     //then
-    assertTrue(consume.isEmpty());
+    Assertions.assertDoesNotThrow(()->this.appUserConsumer.consume(record));
   }
 
 
@@ -128,17 +125,15 @@ class AppUserConsumerTest {
         appUserDTO);
 
     when(this.mockedPostService.persistOrUpdateAuthor(any())).thenReturn(
-        Uni.createFrom().item(Optional.of(toEntity(appUserDTO))));
+        Optional.of(toEntity(appUserDTO)));
 
     //when
-    var author = consumeRecord(record);
+    this.appUserConsumer.consume(record);
 
     //then
-    assertTrue(author.isPresent());
-
-    final var data = author.get();
-    assertThat(data.getId(), notNullValue());
-    assertThat(data.getUsername(), is(data.getUsername()));
+    verify(mockedPostService).persistOrUpdateAuthor(argumentCaptor.capture());
+    final var data = argumentCaptor.getValue();
+    assertThat(data.getUsername(), is(appUserDTO.getUsername()));
     assertTrue(data.isActive());
   }
 
@@ -150,10 +145,10 @@ class AppUserConsumerTest {
         sampleAppUser());
 
     when(this.mockedPostService.persistOrUpdateAuthor(any())).thenThrow(
-        new RuntimeException("Forced Error"));
+        new MongoClientException("Forced Error"));
 
     //then
-    Assertions.assertThrows(RecordConsumingException.class, () -> consumeRecord(record));
+    Assertions.assertThrows(RecordConsumingException.class, () -> this.appUserConsumer.consume(record));
   }
 
   @Test
@@ -163,11 +158,10 @@ class AppUserConsumerTest {
     final var record = sampleIncomingMessage(UUID.randomUUID().toString(),
         sampleAppUser());
 
-    when(this.mockedPostService.persistOrUpdateAuthor(any())).thenReturn(
-        Uni.createFrom().failure(()->new MongoClientException("Forced Error")));
+    when(this.mockedPostService.persistOrUpdateAuthor(any())).thenReturn(Optional.empty());
 
     //then
-    Assertions.assertThrows(RecordConsumingException.class, () -> consumeRecord(record));
+    Assertions.assertThrows(RecordConsumingException.class, () -> this.appUserConsumer.consume(record));
   }
 
   private static AppUserDTO sampleAppUser() {
