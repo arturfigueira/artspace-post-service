@@ -129,7 +129,7 @@ class PostServiceTest {
         Uni.createFrom().item(sample));
 
     //when
-    final var result = this.postService.persistOrUpdateAuthor(sample).await().atMost(ONE_SECOND);
+    final var result = this.postService.persistOrUpdateAuthor(sample);
 
     //then
     assertTrue(result.isPresent());
@@ -149,7 +149,7 @@ class PostServiceTest {
         Uni.createFrom().item(optionalAuthor));
 
     //when
-    final var result = this.postService.persistOrUpdateAuthor(sample).await().atMost(ONE_SECOND);
+    final var result = this.postService.persistOrUpdateAuthor(sample);
 
     //then
     assertTrue(result.isPresent());

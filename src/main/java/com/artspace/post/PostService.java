@@ -3,9 +3,11 @@ package com.artspace.post;
 import com.artspace.post.data.PaginatedSearch;
 import com.artspace.post.data.PostDataAccess;
 import io.smallrye.mutiny.Uni;
+import java.time.Duration;
 import java.util.Optional;
 import javax.enterprise.context.ApplicationScoped;
 import javax.transaction.Transactional;
+import javax.transaction.Transactional.TxType;
 import javax.validation.Valid;
 import lombok.AllArgsConstructor;
 
@@ -17,6 +19,8 @@ import lombok.AllArgsConstructor;
 @AllArgsConstructor
 @ApplicationScoped
 public class PostService {
+
+  private static final Duration TIMEOUT = Duration.ofSeconds(2);
 
   final PostDataAccess postDataAccess;
 
@@ -79,14 +83,26 @@ public class PostService {
    * If given {@link Author} is already persisted the previous data will be updated. If this is a
    * new author, it will be inserted into the repository
    *
+   * Due to a panache limitations, regarding transactions for mongodb, which is still experimental,
+   * and it doesn't support reactive repositories, this method must be a blocking operation. Refer
+   * to <a href="https://quarkus.io/guides/mongodb-panache#reactive">Quarkus Reactive Entities and
+   * Repositories Guide-</a> for more details
+   *
    * @param author to be updated or inserted into the repository
    * @return an {@link Uni} that will resolve it the updated/inserted author
    */
-  @Transactional(Transactional.TxType.REQUIRES_NEW)
-  public Uni<Optional<Author>> persistOrUpdateAuthor(@Valid final Author author) {
-    return this.postDataAccess.findAuthorByUsername(author.getUsername())
-        .chain(foundAuthor -> foundAuthor.map(a -> this.postDataAccess.merge(copyTo(author, a)))
-            .orElseGet(() -> this.postDataAccess.persist(author).map(Optional::ofNullable)));
+  @Transactional(TxType.REQUIRED)
+  public Optional<Author> persistOrUpdateAuthor(@Valid final Author author) {
+    final var foundAuthor = this.postDataAccess
+        .findAuthorByUsername(author.getUsername())
+        .await()
+        .atMost(TIMEOUT);
+
+    final Uni<Optional<Author>> result = foundAuthor.isPresent() ?
+        this.postDataAccess.merge(copyTo(author, foundAuthor.get())) :
+        this.postDataAccess.persist(author).map(Optional::ofNullable);
+
+    return result.await().atMost(TIMEOUT);
   }
 
 
@@ -121,26 +137,34 @@ public class PostService {
   /**
    * Update the stored data of a given {@link Post} This method update only the post's message and
    * enable/disable it.
+   * <p>
+   * Due to a panache limitations, regarding transactions for mongodb, which is still experimental,
+   * and it doesn't support reactive repositories, this method must be a blocking operation. Refer
+   * to <a href="https://quarkus.io/guides/mongodb-panache#reactive">Quarkus Reactive Entities and
+   * Repositories Guide-</a> for more details
    *
    * @param updatedPost post to be updated
-   * @return A {@link Uni} that will resolve into the updated post. If post is not found the uni
-   * will resolve into a {@code Optional.empty()}
+   * @return A {@link Optional<Post>} that with the updated post. If post is not found a {@code
+   * Optional.empty()} will be returned otherwise.
    */
-  @Transactional(Transactional.TxType.REQUIRES_NEW)
-  public Uni<Optional<Post>> updatePost(final Post updatedPost) {
-    return this.postDataAccess.findById(updatedPost.getId())
-        .chain(foundPost -> {
-          Uni<Optional<Post>> result = Uni.createFrom().item(Optional.empty());
+  @Transactional(TxType.REQUIRED)
+  public Optional<Post> updatePost(final Post updatedPost) {
+    final var foundPost = this.postDataAccess.
+        findById(updatedPost.getId())
+        .await()
+        .atMost(TIMEOUT);
 
-          if (foundPost.isPresent()) {
-            Post postToUpdate = foundPost.get();
-            postToUpdate.setEnabled(updatedPost.isEnabled());
-            postToUpdate.setMessage(updatedPost.getMessage());
-            result = this.postDataAccess.merge(postToUpdate);
-          }
+    Optional<Post> result = Optional.empty();
 
-          return result;
-        });
+    if (foundPost.isPresent()) {
+      Post postToUpdate = foundPost.get();
+      postToUpdate.setEnabled(updatedPost.isEnabled());
+      postToUpdate.setMessage(updatedPost.getMessage());
+      result = this.postDataAccess.merge(postToUpdate)
+          .await()
+          .atMost(TIMEOUT);
+    }
+    return result;
   }
 
   /**

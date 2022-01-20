@@ -319,16 +319,17 @@ class PostResourceTest {
     var mainStatus = postStatus.equals("enabled");
 
     for (var index = 0; index < 3; index++) {
-      this.postService
+      var post = this.postService
           .registerAuthor(this.createSampleAuthor())
           .chain(author -> {
             final var samplePost = this.createSamplePost();
             samplePost.setAuthor(author.getUsername());
             return this.postService.insertPost(samplePost);
           })
-          .chain(post -> this.postService.updatePost(post.withEnabled(!mainStatus)))
           .await()
           .atMost(FIVE_SECONDS);
+
+      this.postService.updatePost(post.withEnabled(!mainStatus));
     }
 
     final var sampleAuthor = this.postService.registerAuthor(this.createSampleAuthor()).await()
@@ -336,16 +337,13 @@ class PostResourceTest {
 
     final var targetPost = this.createSamplePost();
     targetPost.setAuthor(sampleAuthor.getUsername());
-    var expectedObjectId = this.postService
+    var post = this.postService
         .insertPost(targetPost)
-        .chain(post -> this.postService.updatePost(post.withEnabled(mainStatus)))
-        .map(post -> post.get().getId())
         .await()
         .atMost(FIVE_SECONDS);
 
-    final var posts = this.postService.searchPosts().byPostStatus("all")
-        .invoke().await().atMost(FIVE_SECONDS);
-    return expectedObjectId;
+    return this.postService
+        .updatePost(post.withEnabled(mainStatus)).map(Post::getId).get();
   }
 
   @Test
@@ -363,11 +361,12 @@ class PostResourceTest {
 
     final var disabledPost = this.createSamplePost();
     disabledPost.setAuthor(sampleAuthor.getUsername());
-    this.postService
+    var post = this.postService
         .insertPost(disabledPost)
-        .chain(post -> this.postService.updatePost(post.withEnabled(false)))
         .await()
         .atMost(FIVE_SECONDS);
+
+    this.postService.updatePost(post.withEnabled(false));
 
     given()
         .header(CONTENT_TYPE, JSON)

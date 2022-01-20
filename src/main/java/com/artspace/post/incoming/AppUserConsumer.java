@@ -4,7 +4,6 @@ import com.artspace.post.Author;
 import com.artspace.post.PostService;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import io.smallrye.mutiny.Uni;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -12,12 +11,12 @@ import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import javax.annotation.PostConstruct;
 import javax.enterprise.context.ApplicationScoped;
+import javax.transaction.Transactional;
 import javax.validation.ValidationException;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.Header;
-import org.bson.types.ObjectId;
 import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.Timeout;
 import org.eclipse.microprofile.reactive.messaging.Incoming;
@@ -50,7 +49,7 @@ public class AppUserConsumer {
 
   /**
    * Consumes records from Kafka with {@link AppUserDTO}. Consumed appUsers will be persisted or
-   * updated. If the user were previously registered, an update will occur.
+   * updated. If the user were previously registered an update will occur.
    * <p>
    * Messages are required to have a {@code correlationId} header to identify the transaction that
    * originated this message. Failing to ship a message with this header will force the consumer to
@@ -59,26 +58,23 @@ public class AppUserConsumer {
    * Also invalid DTOs will be ignored as well and won't return as a failure, acknowledging the
    * received record.
    * <p>
-   * In both cases a {@code Optional.empty()} will returned within a {{@code Uni}
-   * <p>
    * Records won't be acknowledged only if a persistence error occurs. This will be considered a
    * failure and will dirty this consumer. A Failed {@code Uni} will be returned in this case. A
-   * {@link RecordConsumingException} will be wrapping the original exception
    *
    * @param incomingMessage A record containing a {@code AppUserDTO} to be persisted or updated
-   * @return A {@link Uni} that might successfully resolve into a {@link  Author} or a failed uni
-   * with {@link RecordConsumingException}
+   * @throws RecordConsumingException if the data within the message could not be persisted
    */
   @Incoming("appusers-in")
   @Timeout()
   @Retry(delay = 10, maxRetries = 5)
-  public Uni<Optional<Author>> consume(final ConsumerRecord<String, AppUserDTO> incomingMessage) {
+  @Transactional
+  public void consume(final ConsumerRecord<String, AppUserDTO> incomingMessage) {
     final var headers = incomingMessage.headers();
     final var correlationHeader = headers.headers(HEADER_CORID);
     if (!correlationHeader.iterator().hasNext()) {
       logger.errorf("Required headers not found. Ignoring Message %s",
           incomingMessage);
-      return Uni.createFrom().item(Optional.empty());
+      return;
     }
 
     var correlation = Optional.ofNullable(correlationHeader.iterator().next())
@@ -90,7 +86,7 @@ public class AppUserConsumer {
     if (correlation.isEmpty()) {
       logger.errorf("CorrelationId header not found. Ignoring Message %s",
           incomingMessage);
-      return Uni.createFrom().item(Optional.empty());
+      return;
     }
 
     final var correlationId = correlation.get();
@@ -100,33 +96,38 @@ public class AppUserConsumer {
 
     final var eventStartTime = incomingMessage.timestamp();
 
+    Optional<Author> optionalAuthor = Optional.empty();
     try {
-      return postService.persistOrUpdateAuthor(toEntity(appUser))
-          .invoke(author -> logger.infof(
-              "[%s] AppUser with username %s processed. Author updated/registered with id %s",
-              correlationId, appUser.getUsername(), author.map(Author::getId).map(
-                  ObjectId::toString).orElse("N/A")))
-          .invoke(() -> recordTimer(eventStartTime))
-          .onFailure()
-          .transform(e -> new RecordConsumingException(e.getMessage(), incomingMessage));
-
+      optionalAuthor = postService.persistOrUpdateAuthor(toEntity(appUser));
     } catch (ValidationException e) {
-      logger.debugf(
-          "[%s] Message with invalid payload. Reason %s",
+      logger.errorf(
+          "[%s] Message with invalid payload. Ignoring Message. Reason %s",
           correlationId, e);
-      return Uni.createFrom().item(Optional.empty());
-    } catch (Exception e) {
-      return Uni.createFrom()
-          .failure(new RecordConsumingException(e.getMessage(), incomingMessage));
+      return;
+    } catch (Exception ex) {
+      final var message = String.format("[%s] It was not possible to Persist Message", correlation);
+      throw new RecordConsumingException(message, ex);
     }
 
+    if (optionalAuthor.isEmpty()) {
+      recordTimer(eventStartTime);
+      final var message = String.format("[%s] Persist process does not returned anything",
+          correlation);
+      throw new RecordConsumingException(message);
+    }
+
+    final var savedUser = optionalAuthor.get();
+    logger.infof(
+        "[%s] AppUser with username %s processed. Author updated/registered with id %s",
+        correlationId, savedUser.getUsername(), savedUser.getId());
+    recordTimer(eventStartTime);
   }
 
   private void recordTimer(long eventStartTime) {
     final var totalTime = Instant.now()
         .minus(eventStartTime, ChronoUnit.MILLIS)
         .toEpochMilli();
-    this.processTimer.record(totalTime,TimeUnit.MILLISECONDS);
+    this.processTimer.record(totalTime, TimeUnit.MILLISECONDS);
   }
 
   private static Author toEntity(final AppUserDTO appUserDTO) {
