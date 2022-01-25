@@ -42,7 +42,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class AppUserConsumerTest {
 
   private static final Logger LOGGER = Logger.getLogger(AppUserConsumer.class);
-  private static final Duration ONE_SEC = Duration.ofSeconds(1);
 
   static Faker FAKER;
 

@@ -8,15 +8,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.artspace.post.data.PostDataAccess;
+import com.artspace.post.outgoing.DataEmitter;
+import com.artspace.post.outgoing.PostDTO;
 import com.github.javafaker.Faker;
 import io.smallrye.mutiny.Uni;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.UUID;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +31,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EmptySource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mapstruct.factory.Mappers;
+import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,7 +40,13 @@ class PostServiceTest {
 
   private static final Duration ONE_SECOND = Duration.ofSeconds(1L);
 
+  @Mock
   PostDataAccess postDataAccess;
+
+  @Mock
+  DataEmitter<PostDTO> emitter;
+
+  PostMapper postMapper = Mappers.getMapper(PostMapper.class);
 
   PostService postService;
 
@@ -42,9 +54,7 @@ class PostServiceTest {
 
   @BeforeEach
   public void setup() {
-    this.postDataAccess = mock(PostDataAccess.class);
-
-    this.postService = new PostService(postDataAccess);
+    this.postService = new PostService(postDataAccess, postMapper, emitter);
   }
 
   @BeforeAll
@@ -185,6 +195,44 @@ class PostServiceTest {
     assertEquals(isActive, result);
   }
 
+  @Test
+  @DisplayName("InsertPost should notify the persistence")
+  void persistPostShouldEmit() {
+    //given
+    var post = getSamplePost();
+    when(postDataAccess.persist(any(Post.class))).thenReturn(
+        Uni.createFrom().item(post));
+
+    var correlationId = createSampleCorrelationId();
+
+    //when
+    this.postService.insertPost(post, correlationId).await().atMost(ONE_SECOND);
+
+    //then
+    verify(this.emitter, times(1)).emit(eq(correlationId), any(PostDTO.class));
+  }
+
+  @Test
+  @DisplayName("UpdatePost should notify the update")
+  void updatePostShouldEmit() {
+    //given
+    var post = getSamplePost();
+    post.setId(new ObjectId());
+    when(postDataAccess.findById(any(ObjectId.class))).thenReturn(
+        Uni.createFrom().item(Optional.of(post)));
+
+    when(postDataAccess.merge(post)).thenReturn(
+        Uni.createFrom().item(Optional.of(post)));
+
+    var correlationId = createSampleCorrelationId();
+
+    //when
+    this.postService.updatePost(post, correlationId);
+
+    //then
+    verify(this.emitter, times(1)).emit(eq(correlationId), any(PostDTO.class));
+  }
+
 
   private static Author getSampleAuthor() {
     final var author = new Author();
@@ -192,5 +240,16 @@ class PostServiceTest {
     author.setUsername(FAKER.name().username());
     author.setId(new ObjectId());
     return author;
+  }
+
+  private static String createSampleCorrelationId() {
+    return UUID.randomUUID().toString();
+  }
+
+  private static Post getSamplePost() {
+    final var post = new Post();
+    post.setAuthor(FAKER.name().username());
+    post.setMessage(FAKER.lorem().sentence());
+    return post;
   }
 }

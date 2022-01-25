@@ -2,6 +2,9 @@ package com.artspace.post;
 
 import com.artspace.post.data.PaginatedSearch;
 import com.artspace.post.data.PostDataAccess;
+import com.artspace.post.outgoing.Action;
+import com.artspace.post.outgoing.DataEmitter;
+import com.artspace.post.outgoing.PostDTO;
 import io.smallrye.mutiny.Uni;
 import java.time.Duration;
 import java.util.Optional;
@@ -23,6 +26,10 @@ public class PostService {
   private static final Duration TIMEOUT = Duration.ofSeconds(2);
 
   final PostDataAccess postDataAccess;
+
+  final PostMapper postMapper;
+
+  final DataEmitter<PostDTO> emitter;
 
   private static Author normalizeAuthor(final Author input) {
     return input.withUsername(normalizeUserName(input.getUsername()));
@@ -82,7 +89,7 @@ public class PostService {
   /**
    * If given {@link Author} is already persisted the previous data will be updated. If this is a
    * new author, it will be inserted into the repository
-   *
+   * <p>
    * Due to a panache limitations, regarding transactions for mongodb, which is still experimental,
    * and it doesn't support reactive repositories, this method must be a blocking operation. Refer
    * to <a href="https://quarkus.io/guides/mongodb-panache#reactive">Quarkus Reactive Entities and
@@ -121,22 +128,32 @@ public class PostService {
 
   /**
    * Permanently stores a new {@link Post} into the data repository. Data validations won't be done
-   * at this service layer, and should be done by its caller
+   * at this service layer, and should be done by its caller.
+   * <p>
+   * If successfully persisted, a notification will be broadcast to a message broker to notify that
+   * a new post has being introduced
    *
    * @param post A post data to be persisted
+   * @param correlationId Transit id of the original request that made this insert necessary
    * @return An {@link Uni} that will be resolved into the persisted Post, including its newly
    * generated id
    */
-  public Uni<Post> insertPost(final Post post) {
+  public Uni<Post> insertPost(final Post post, final String correlationId) {
     final var normalizedPost = post.toToday();
     normalizedPost.enableIt();
-    return this.postDataAccess.persist(normalizedPost);
+    return this.postDataAccess.persist(normalizedPost)
+        .invoke(pPost -> this.broadcastPersist(pPost, correlationId));
   }
 
 
   /**
    * Update the stored data of a given {@link Post} This method update only the post's message and
    * enable/disable it.
+   *
+   * <p>
+   * If successfully persisted, a notification will be broadcast to a message broker, notifying that
+   * given post has being updated
+   *
    * <p>
    * Due to a panache limitations, regarding transactions for mongodb, which is still experimental,
    * and it doesn't support reactive repositories, this method must be a blocking operation. Refer
@@ -144,11 +161,12 @@ public class PostService {
    * Repositories Guide-</a> for more details
    *
    * @param updatedPost post to be updated
+   * @param correlationId Transit id of the original request that made this update necessary
    * @return A {@link Optional<Post>} that with the updated post. If post is not found a {@code
    * Optional.empty()} will be returned otherwise.
    */
   @Transactional(TxType.REQUIRED)
-  public Optional<Post> updatePost(final Post updatedPost) {
+  public Optional<Post> updatePost(final Post updatedPost, final String correlationId) {
     final var foundPost = this.postDataAccess.
         findById(updatedPost.getId())
         .await()
@@ -161,6 +179,7 @@ public class PostService {
       postToUpdate.setEnabled(updatedPost.isEnabled());
       postToUpdate.setMessage(updatedPost.getMessage());
       result = this.postDataAccess.merge(postToUpdate)
+          .invoke(p -> p.ifPresent(post -> this.broadcastUpdate(post, correlationId)))
           .await()
           .atMost(TIMEOUT);
     }
@@ -189,5 +208,19 @@ public class PostService {
    */
   public PaginatedSearch searchPosts() {
     return this.postDataAccess.searchPosts();
+  }
+
+  private void broadcastPersist(final Post post, final String correlationId) {
+    this.broadcastChanges(post, correlationId, Action.CREATED);
+  }
+
+  private void broadcastUpdate(final Post post, final String correlationId) {
+    this.broadcastChanges(post, correlationId, Action.UPDATED);
+  }
+
+  private void broadcastChanges(final Post post, final String correlationId, final Action action) {
+    final var postDto = postMapper.toDTO(post);
+    postDto.setAction(action);
+    emitter.emit(correlationId, postDto);
   }
 }
