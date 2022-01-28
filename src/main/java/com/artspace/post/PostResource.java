@@ -87,7 +87,7 @@ public class PostResource {
   @Counted(value ="post_resource_save", description = "How many times save a new post was executed")
   public Uni<Response> savePost(@NotNull @Valid final Post post, @Context UriInfo uriInfo,
       @NotBlank @HeaderParam(CORRELATION_HEADER) String correlationId) {
-    var persistedPost = postService.insertPost(post);
+    var persistedPost = postService.insertPost(post, correlationId);
     return persistedPost.map(entity -> {
       final var builder = uriInfo.getAbsolutePathBuilder().path(entity.getId().toString());
       final var postURI = builder.build();

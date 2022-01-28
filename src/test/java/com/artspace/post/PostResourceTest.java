@@ -142,14 +142,17 @@ class PostResourceTest {
     final var sampleAuthor = this.postService.registerAuthor(this.createSampleAuthor()).await()
         .atMost(FIVE_SECONDS);
 
+    final var correlationId =  createSampleCorrelationId();
+
     final var samplePost = this.createSamplePost();
     samplePost.setAuthor(sampleAuthor.getUsername());
-    var persistedPost = this.postService.insertPost(samplePost).await().atMost(FIVE_SECONDS);
+    var persistedPost = this.postService.insertPost(samplePost, correlationId)
+        .await().atMost(FIVE_SECONDS);
 
     given()
         .header(CONTENT_TYPE, JSON)
         .header(ACCEPT, JSON)
-        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
+        .header(PostResource.CORRELATION_HEADER, correlationId)
         .pathParam("postId", persistedPost.getId().toString())
         .when()
         .get("/api/posts/{postId}")
@@ -226,10 +229,12 @@ class PostResourceTest {
     final var sampleAuthor = this.postService.registerAuthor(this.createSampleAuthor()).await()
         .atMost(FIVE_SECONDS);
 
+    final var correlationId = createSampleCorrelationId();
+
     final var samplePost = this.createSamplePost();
     samplePost.setAuthor(sampleAuthor.getUsername());
     this.postService
-        .insertPost(samplePost)
+        .insertPost(samplePost, correlationId)
         .chain(() -> this.postService.updateAuthor(sampleAuthor.withActive(false)))
         .await()
         .atMost(FIVE_SECONDS);
@@ -237,7 +242,7 @@ class PostResourceTest {
     given()
         .header(CONTENT_TYPE, JSON)
         .header(ACCEPT, JSON)
-        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
+        .header(PostResource.CORRELATION_HEADER, correlationId)
         .pathParam("username", sampleAuthor.getUsername())
         .when()
         .get("/api/posts?author={username}")
@@ -256,7 +261,7 @@ class PostResourceTest {
       uniPosts.add(this.postService.registerAuthor(this.createSampleAuthor()).chain(author -> {
         final var samplePost = this.createSamplePost();
         samplePost.setAuthor(author.getUsername());
-        return this.postService.insertPost(samplePost);
+        return this.postService.insertPost(samplePost, createSampleCorrelationId());
       }));
     }
 
@@ -324,12 +329,12 @@ class PostResourceTest {
           .chain(author -> {
             final var samplePost = this.createSamplePost();
             samplePost.setAuthor(author.getUsername());
-            return this.postService.insertPost(samplePost);
+            return this.postService.insertPost(samplePost, createSampleCorrelationId());
           })
           .await()
           .atMost(FIVE_SECONDS);
 
-      this.postService.updatePost(post.withEnabled(!mainStatus));
+      this.postService.updatePost(post.withEnabled(!mainStatus), createSampleCorrelationId());
     }
 
     final var sampleAuthor = this.postService.registerAuthor(this.createSampleAuthor()).await()
@@ -338,12 +343,13 @@ class PostResourceTest {
     final var targetPost = this.createSamplePost();
     targetPost.setAuthor(sampleAuthor.getUsername());
     var post = this.postService
-        .insertPost(targetPost)
+        .insertPost(targetPost, createSampleCorrelationId())
         .await()
         .atMost(FIVE_SECONDS);
 
     return this.postService
-        .updatePost(post.withEnabled(mainStatus)).map(Post::getId).get();
+        .updatePost(post.withEnabled(mainStatus), createSampleCorrelationId())
+        .map(Post::getId).get();
   }
 
   @Test
@@ -355,18 +361,18 @@ class PostResourceTest {
     final var enabledPost = this.createSamplePost();
     enabledPost.setAuthor(sampleAuthor.getUsername());
     this.postService
-        .insertPost(enabledPost).map(Post::getId)
+        .insertPost(enabledPost, createSampleCorrelationId()).map(Post::getId)
         .await()
         .atMost(FIVE_SECONDS);
 
     final var disabledPost = this.createSamplePost();
     disabledPost.setAuthor(sampleAuthor.getUsername());
     var post = this.postService
-        .insertPost(disabledPost)
+        .insertPost(disabledPost, createSampleCorrelationId())
         .await()
         .atMost(FIVE_SECONDS);
 
-    this.postService.updatePost(post.withEnabled(false));
+    this.postService.updatePost(post.withEnabled(false), createSampleCorrelationId());
 
     given()
         .header(CONTENT_TYPE, JSON)
@@ -391,7 +397,7 @@ class PostResourceTest {
     for (int index = 0; index < 5; index++) {
       final var enabledPost = this.createSamplePost();
       enabledPost.setAuthor(sampleAuthor.getUsername());
-      uniPosts.add(this.postService.insertPost(enabledPost));
+      uniPosts.add(this.postService.insertPost(enabledPost, createSampleCorrelationId()));
     }
 
     Uni.combine().all().unis(uniPosts).combinedWith(List::size).await().atMost(FIVE_SECONDS);
