@@ -3,7 +3,9 @@ package com.artspace.post.data;
 import com.artspace.post.Author;
 import com.artspace.post.Post;
 import io.smallrye.mutiny.Uni;
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import javax.enterprise.context.ApplicationScoped;
 import lombok.RequiredArgsConstructor;
 import org.bson.types.ObjectId;
@@ -58,6 +60,12 @@ class MongoDataAccess implements PostDataAccess {
   @Override
   public Uni<Optional<Post>> findById(ObjectId id) {
     return this.postRepository.findByIdOptional(id);
+  }
+
+  @Override
+  public Uni<List<Post>> findByIds(List<String> ids) {
+    final var objectIds = ids.stream().map(ObjectId::new).collect(Collectors.toList());
+    return this.postRepository.findByIds(objectIds);
   }
 
   @Override

@@ -18,9 +18,12 @@ import com.artspace.post.outgoing.PostDTO;
 import com.github.javafaker.Faker;
 import io.smallrye.mutiny.Uni;
 import java.time.Duration;
+import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -231,6 +234,38 @@ class PostServiceTest {
 
     //then
     verify(this.emitter, times(1)).emit(eq(correlationId), any(PostDTO.class));
+  }
+
+  @Test
+  @DisplayName("PostsById should return empty list when requested empty ids")
+  void postsByIdsShouldReturnEmptyIfReceivesEmpty() {
+    //when
+    final var posts = this.postService.retrievePostByIds(Collections.emptyList()).await()
+        .atMost(ONE_SECOND);
+
+    //then
+    assertTrue(posts.isEmpty());
+  }
+
+  @Test
+  @DisplayName("PostsById should return list of posts by its ids")
+  void postsByIdsShouldReturnListOfPosts() {
+    //given
+    final var samplePosts = List.of(getSamplePost(), getSamplePost());
+    samplePosts.forEach(author -> author.setId(new ObjectId()));
+
+    final var ids = samplePosts.stream().map(Post::getId).map(ObjectId::toString)
+        .collect(Collectors.toList());
+
+    when(postDataAccess.findByIds(eq(ids))).thenReturn(
+        Uni.createFrom().item(samplePosts));
+
+    //when
+    final var posts = this.postService.retrievePostByIds(ids).await()
+        .atMost(ONE_SECOND);
+
+    //then
+    assertThat(posts, is(samplePosts));
   }
 
 
