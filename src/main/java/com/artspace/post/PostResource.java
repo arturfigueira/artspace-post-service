@@ -6,6 +6,8 @@ import io.micrometer.core.annotation.Counted;
 import io.micrometer.core.annotation.Timed;
 import io.smallrye.mutiny.Uni;
 import java.net.URI;
+import java.util.List;
+import java.util.stream.Stream;
 import javax.validation.Valid;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotEmpty;
@@ -41,6 +43,7 @@ import org.jboss.resteasy.reactive.RestPath;
 public class PostResource {
 
   protected static final String CORRELATION_HEADER = "X-Request-ID";
+  protected static final String PARAM_SEPARATOR = ",";
 
   final PostService postService;
   final Logger logger;
@@ -54,8 +57,8 @@ public class PostResource {
       @Content(mediaType = APPLICATION_JSON, schema = @Schema(implementation = Post.class)))
   @APIResponse(responseCode = "204", description = "Post not found for a given postId")
   @APIResponse(responseCode = "400", description = "postId is invalid")
-  @Timed(value ="post_resource_get_by_id", description = "How long it takes to find a post by Id")
-  @Counted(value ="post_resource_get_by_id", description = "How many times find a post by Id was executed")
+  @Timed(value = "post_resource_get_by_id", description = "How long it takes to find a post by Id")
+  @Counted(value = "post_resource_get_by_id", description = "How many times find a post by Id was executed")
   public Uni<Response> getPostById(@NotEmpty @NotNull @RestPath String postId,
       @NotBlank @HeaderParam(CORRELATION_HEADER) String correlationId) {
 
@@ -83,8 +86,8 @@ public class PostResource {
   @APIResponse(
       responseCode = "400",
       description = "Post not persisted due to invalid data")
-  @Timed(value ="post_resource_save", description = "How long it takes to save a new post")
-  @Counted(value ="post_resource_save", description = "How many times save a new post was executed")
+  @Timed(value = "post_resource_save", description = "How long it takes to save a new post")
+  @Counted(value = "post_resource_save", description = "How many times save a new post was executed")
   public Uni<Response> savePost(@NotNull @Valid final Post post, @Context UriInfo uriInfo,
       @NotBlank @HeaderParam(CORRELATION_HEADER) String correlationId) {
     var persistedPost = postService.insertPost(post, correlationId);
@@ -103,15 +106,31 @@ public class PostResource {
       content =
       @Content(mediaType = APPLICATION_JSON, schema = @Schema(implementation = Post.class)))
   @APIResponse(responseCode = "400", description = "Query params contains invalid data")
-  @Timed(value ="post_resource_query", description = "How long it takes to query a post")
-  @Counted(value ="post_resource_query", description = "How many times query post was executed")
+  @Timed(value = "post_resource_query", description = "How long it takes to query a post")
+  @Counted(value = "post_resource_query", description = "How many times query post was executed")
   public Uni<Response> queryPosts(
+      @QueryParam("ids") String ids,
       @QueryParam("author") String username,
       @DefaultValue("enabled") @QueryParam("status") String postStatus,
       @DefaultValue("0") @PositiveOrZero @QueryParam("index") int pageIndex,
       @DefaultValue("10") @Positive @QueryParam("size") int pageSize,
       @NotBlank @HeaderParam(CORRELATION_HEADER) String correlationId
   ) {
+    return isQueryByIds(ids)
+        ? getPostsByIds(ids, correlationId)
+        : getPostsByQuery(username, postStatus, pageIndex, pageSize, correlationId);
+  }
+
+  private boolean isQueryByIds(final String ids) {
+    return ids != null && !ids.trim().isBlank()  && allIdsNotBlank(ids);
+  }
+
+  private boolean allIdsNotBlank(final String ids) {
+    return Stream.of(ids.split(PARAM_SEPARATOR)).anyMatch(s -> !s.trim().isBlank());
+  }
+
+  private Uni<Response> getPostsByQuery(String username,
+      String postStatus, int pageIndex, int pageSize, String correlationId) {
     logger.debugf("[%s] Querying posts for %s with status %, at page %s with %s per page",
         correlationId, username, postStatus, pageIndex, pageSize);
 
@@ -124,6 +143,16 @@ public class PostResource {
 
     return postsByAuthor.map(entities -> {
       logger.debugf("[%s] Found %s posts for %s", correlationId, entities.size(), username);
+      return Response.ok(entities).build();
+    });
+  }
+
+  private Uni<Response> getPostsByIds(final String ids, String correlationId) {
+    logger.debugf("[%s] Query posts by ids: %s", correlationId, ids);
+
+    final var postIds = List.of(ids.split(PARAM_SEPARATOR));
+    return postService.retrievePostByIds(postIds).map(entities -> {
+      logger.debugf("[%s] Found %s posts for %s", correlationId, entities.size(), entities);
       return Response.ok(entities).build();
     });
   }

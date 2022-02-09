@@ -7,6 +7,8 @@ import com.artspace.post.outgoing.DataEmitter;
 import com.artspace.post.outgoing.PostDTO;
 import io.smallrye.mutiny.Uni;
 import java.time.Duration;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 import javax.enterprise.context.ApplicationScoped;
 import javax.transaction.Transactional;
@@ -133,7 +135,7 @@ public class PostService {
    * If successfully persisted, a notification will be broadcast to a message broker to notify that
    * a new post has being introduced
    *
-   * @param post A post data to be persisted
+   * @param post          A post data to be persisted
    * @param correlationId Transit id of the original request that made this insert necessary
    * @return An {@link Uni} that will be resolved into the persisted Post, including its newly
    * generated id
@@ -160,7 +162,7 @@ public class PostService {
    * to <a href="https://quarkus.io/guides/mongodb-panache#reactive">Quarkus Reactive Entities and
    * Repositories Guide-</a> for more details
    *
-   * @param updatedPost post to be updated
+   * @param updatedPost   post to be updated
    * @param correlationId Transit id of the original request that made this update necessary
    * @return A {@link Optional<Post>} that with the updated post. If post is not found a {@code
    * Optional.empty()} will be returned otherwise.
@@ -196,10 +198,26 @@ public class PostService {
    * @return an {@link Uni} which will resolve into an {@link Optional<Post>}. {@code
    * Optional.empty()} represents that no post was found
    */
-  public Uni<Optional<Post>> retrievePostById(final String id) {
+  public Uni<Optional<Post>> retrievePostById(String id) {
     return this.postDataAccess.findById(id);
   }
 
+
+  /**
+   * Retrieves a list of posts by a given list of unique object identifier. This will return results
+   * even when the author is disabled. If no posts are found an empty collection will return. The
+   * same result will be returned if given list of ids are empty.
+   * <p>
+   * This method ignores the current author state.
+   *
+   * @param ids list of posts' unique object identifiers
+   * @return an {@link Uni} which will resolve into an {@link List<Post>}.
+   */
+  public Uni<List<Post>> retrievePostByIds(final List<String> ids) {
+    return ids.isEmpty()
+        ? Uni.createFrom().item(Collections.emptyList())
+        : this.postDataAccess.findByIds(ids);
+  }
 
   /**
    * Initiate a {@link PaginatedSearch} pipeline

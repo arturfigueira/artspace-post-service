@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import javax.inject.Inject;
 import org.bson.types.ObjectId;
 import org.hamcrest.Matchers;
@@ -142,7 +143,7 @@ class PostResourceTest {
     final var sampleAuthor = this.postService.registerAuthor(this.createSampleAuthor()).await()
         .atMost(FIVE_SECONDS);
 
-    final var correlationId =  createSampleCorrelationId();
+    final var correlationId = createSampleCorrelationId();
 
     final var samplePost = this.createSamplePost();
     samplePost.setAuthor(sampleAuthor.getUsername());
@@ -320,38 +321,6 @@ class PostResourceTest {
         .body("id", Is.is(List.of(expectedObjectId.toString())));
   }
 
-  private ObjectId samplePostFilterTestData(String postStatus) {
-    var mainStatus = postStatus.equals("enabled");
-
-    for (var index = 0; index < 3; index++) {
-      var post = this.postService
-          .registerAuthor(this.createSampleAuthor())
-          .chain(author -> {
-            final var samplePost = this.createSamplePost();
-            samplePost.setAuthor(author.getUsername());
-            return this.postService.insertPost(samplePost, createSampleCorrelationId());
-          })
-          .await()
-          .atMost(FIVE_SECONDS);
-
-      this.postService.updatePost(post.withEnabled(!mainStatus), createSampleCorrelationId());
-    }
-
-    final var sampleAuthor = this.postService.registerAuthor(this.createSampleAuthor()).await()
-        .atMost(FIVE_SECONDS);
-
-    final var targetPost = this.createSamplePost();
-    targetPost.setAuthor(sampleAuthor.getUsername());
-    var post = this.postService
-        .insertPost(targetPost, createSampleCorrelationId())
-        .await()
-        .atMost(FIVE_SECONDS);
-
-    return this.postService
-        .updatePost(post.withEnabled(mainStatus), createSampleCorrelationId())
-        .map(Post::getId).get();
-  }
-
   @Test
   @DisplayName("Query Posts must be able to return all post no matter what status")
   void queryPostsSMustBeAbleToReturnAllPostsFromUser() {
@@ -425,6 +394,43 @@ class PostResourceTest {
         .body("size()", Is.is(1));
   }
 
+  @Test
+  @DisplayName("Query Posts should query by page if ids are empty")
+  void queryPostsShouldQueryAllPostsIfEmptyIds() {
+    samplePosts(12);
+
+    given()
+        .header(CONTENT_TYPE, JSON)
+        .header(ACCEPT, JSON)
+        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
+        .when()
+        .get("/api/posts?ids=")
+        .then()
+        .statusCode(OK.getStatusCode())
+        .header(CONTENT_TYPE, "application/json")
+        .body("size()", Is.is(10));
+  }
+
+  @Test
+  @DisplayName("Query Posts should query by ids")
+  void queryPostsShouldQueryByIds() {
+    final var posts = samplePosts(5);
+    final var ids = posts.stream().limit(2).map(Post::getId).map(ObjectId::toString)
+        .collect(Collectors.toList());
+
+    given()
+        .header(CONTENT_TYPE, JSON)
+        .header(ACCEPT, JSON)
+        .header(PostResource.CORRELATION_HEADER, createSampleCorrelationId())
+        .pathParam("ids", String.join(",", ids))
+        .when()
+        .get("/api/posts?ids={ids}")
+        .then()
+        .statusCode(OK.getStatusCode())
+        .header(CONTENT_TYPE, "application/json")
+        .body("size()", Is.is(2));
+  }
+
   private Author createSampleAuthor() {
     var author = new Author();
     author.setUsername(FAKER.name().username());
@@ -441,5 +447,55 @@ class PostResourceTest {
 
   private String createSampleCorrelationId() {
     return UUID.randomUUID().toString();
+  }
+
+  private List<Post> samplePosts(int quantity) {
+    final List<Post> sample = new ArrayList<>();
+    for (var index = 0; index < quantity; index++) {
+      final var post = this.postService
+          .registerAuthor(this.createSampleAuthor())
+          .chain(author -> {
+            final var samplePost = this.createSamplePost();
+            samplePost.setAuthor(author.getUsername());
+            return this.postService.insertPost(samplePost, createSampleCorrelationId());
+          })
+          .await()
+          .atMost(FIVE_SECONDS);
+      sample.add(post);
+    }
+
+    return sample;
+  }
+
+  private ObjectId samplePostFilterTestData(String postStatus) {
+    var mainStatus = postStatus.equals("enabled");
+
+    for (var index = 0; index < 3; index++) {
+      var post = this.postService
+          .registerAuthor(this.createSampleAuthor())
+          .chain(author -> {
+            final var samplePost = this.createSamplePost();
+            samplePost.setAuthor(author.getUsername());
+            return this.postService.insertPost(samplePost, createSampleCorrelationId());
+          })
+          .await()
+          .atMost(FIVE_SECONDS);
+
+      this.postService.updatePost(post.withEnabled(!mainStatus), createSampleCorrelationId());
+    }
+
+    final var sampleAuthor = this.postService.registerAuthor(this.createSampleAuthor()).await()
+        .atMost(FIVE_SECONDS);
+
+    final var targetPost = this.createSamplePost();
+    targetPost.setAuthor(sampleAuthor.getUsername());
+    var post = this.postService
+        .insertPost(targetPost, createSampleCorrelationId())
+        .await()
+        .atMost(FIVE_SECONDS);
+
+    return this.postService
+        .updatePost(post.withEnabled(mainStatus), createSampleCorrelationId())
+        .map(Post::getId).get();
   }
 }

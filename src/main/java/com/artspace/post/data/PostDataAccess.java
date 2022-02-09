@@ -3,6 +3,7 @@ package com.artspace.post.data;
 import com.artspace.post.Author;
 import com.artspace.post.Post;
 import io.smallrye.mutiny.Uni;
+import java.util.List;
 import java.util.Optional;
 import org.bson.types.ObjectId;
 
@@ -24,6 +25,8 @@ public interface PostDataAccess {
   Uni<Optional<Post>> findById(String id);
 
   Uni<Optional<Post>> findById(final ObjectId id);
+
+  Uni<List<Post>> findByIds(List<String> id);
 
   Uni<Optional<Author>> findAuthorByUsername(String username);
 
