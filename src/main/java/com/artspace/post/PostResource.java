@@ -4,6 +4,7 @@ import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 
 import io.micrometer.core.annotation.Counted;
 import io.micrometer.core.annotation.Timed;
+import io.quarkus.security.Authenticated;
 import io.smallrye.mutiny.Uni;
 import java.net.URI;
 import java.util.List;
@@ -40,6 +41,7 @@ import org.jboss.resteasy.reactive.RestPath;
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @AllArgsConstructor
+@Authenticated
 public class PostResource {
 
   protected static final String CORRELATION_HEADER = "X-Request-ID";
